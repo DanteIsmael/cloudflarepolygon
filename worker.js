@@ -15,24 +15,28 @@ const CONTRACT_ABI = [
   }
 ];
 
+function isBytes32(value) {
+  return typeof value === "string" &&
+    /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
 export default {
   async fetch(request, env) {
-
     const url = new URL(request.url);
 
     /* =====================
        HEALTH CHECK
     ====================== */
-if (url.pathname === "/health") {
-  return new Response(JSON.stringify({
-    status: "ok",
-    network: "polygon",
-    rpc: env.RPC_URL ? "set" : "missing",
-    contract: env.CONTRACT_ADDRESS
-  }), {
-    headers: { "Content-Type": "application/json" }
-  });
-}
+    if (url.pathname === "/health") {
+      return new Response(JSON.stringify({
+        status: "ok",
+        network: "polygon",
+        rpc: env.RPC_URL ? "set" : "missing",
+        contract: env.CONTRACT_ADDRESS || "missing"
+      }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
 
     /* =====================
        STAMP ON-CHAIN
@@ -47,11 +51,19 @@ if (url.pathname === "/health") {
         const body = await request.json();
         const { documentHash, entity, docType, state } = body;
 
-        if (!documentHash || !entity) {
-          return new Response(
-            JSON.stringify({ error: "documentHash y entity son requeridos" }),
-            { status: 400 }
-          );
+        // 🔒 Validaciones duras
+        if (!isBytes32(documentHash)) {
+          return new Response(JSON.stringify({
+            ok: false,
+            error: "documentHash debe ser bytes32 (0x + 64 hex)"
+          }), { status: 400 });
+        }
+
+        if (!isBytes32(entity)) {
+          return new Response(JSON.stringify({
+            ok: false,
+            error: "entity debe ser bytes32 (0x + 64 hex)"
+          }), { status: 400 });
         }
 
         const provider = new ethers.JsonRpcProvider(
@@ -59,27 +71,39 @@ if (url.pathname === "/health") {
         );
 
         const wallet = new ethers.Wallet(
-          env.PRIVATE_KEY,
+          env.PRIVATE_KEY.trim(),
           provider
         );
 
         const contract = new ethers.Contract(
-          env.CONTRACT_ADDRESS,
+          env.CONTRACT_ADDRESS.trim(),
           CONTRACT_ABI,
           wallet
         );
+
+        // 🔥 Estimación de gas real
+        const estimatedGas = await contract.stamp.estimateGas(
+          documentHash,
+          entity,
+          Number(docType),
+          Number(state)
+        );
+
+        // +20% buffer institucional
+        const gasLimit = (estimatedGas * 12n) / 10n;
 
         const tx = await contract.stamp(
           documentHash,
           entity,
           Number(docType),
           Number(state),
-          { gasLimit: 120_000 }
+          { gasLimit }
         );
 
         return new Response(JSON.stringify({
           ok: true,
-          hash: tx.hash
+          hash: tx.hash,
+          gasLimit: gasLimit.toString()
         }), {
           headers: { "Content-Type": "application/json" }
         });
@@ -98,5 +122,3 @@ if (url.pathname === "/health") {
     return new Response("Not Found", { status: 404 });
   }
 };
-
-
