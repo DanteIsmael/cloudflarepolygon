@@ -1,6 +1,25 @@
 import { ethers } from "ethers";
 
+/* =====================
+   ABI DEL CONTRATO
+===================== */
 const CONTRACT_ABI = [
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "documentHash", "type": "bytes32" }
+    ],
+    "name": "getRecord",
+    "outputs": [
+      { "internalType": "address", "name": "owner", "type": "address" },
+      { "internalType": "uint256", "name": "timestamp", "type": "uint256" },
+      { "internalType": "uint256", "name": "blockNumber", "type": "uint256" },
+      { "internalType": "bytes32", "name": "entity", "type": "bytes32" },
+      { "internalType": "uint16", "name": "docType", "type": "uint16" },
+      { "internalType": "uint16", "name": "state", "type": "uint16" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
   {
     "inputs": [
       { "internalType": "bytes32", "name": "documentHash", "type": "bytes32" },
@@ -15,11 +34,17 @@ const CONTRACT_ABI = [
   }
 ];
 
+/* =====================
+   HELPERS
+===================== */
 function isBytes32(value) {
   return typeof value === "string" &&
     /^0x[0-9a-fA-F]{64}$/.test(value);
 }
 
+/* =====================
+   WORKER
+===================== */
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -51,7 +76,6 @@ export default {
         const body = await request.json();
         const { documentHash, entity, docType, state } = body;
 
-        // 🔒 Validaciones duras
         if (!isBytes32(documentHash)) {
           return new Response(JSON.stringify({
             ok: false,
@@ -66,14 +90,8 @@ export default {
           }), { status: 400 });
         }
 
-        const provider = new ethers.JsonRpcProvider(
-          env.RPC_URL.trim()
-        );
-
-        const wallet = new ethers.Wallet(
-          env.PRIVATE_KEY.trim(),
-          provider
-        );
+        const provider = new ethers.JsonRpcProvider(env.RPC_URL.trim());
+        const wallet = new ethers.Wallet(env.PRIVATE_KEY.trim(), provider);
 
         const contract = new ethers.Contract(
           env.CONTRACT_ADDRESS.trim(),
@@ -81,7 +99,6 @@ export default {
           wallet
         );
 
-        // 🔥 Estimación de gas real
         const estimatedGas = await contract.stamp.estimateGas(
           documentHash,
           entity,
@@ -89,7 +106,6 @@ export default {
           Number(state)
         );
 
-        // +20% buffer institucional
         const gasLimit = (estimatedGas * 12n) / 10n;
 
         const tx = await contract.stamp(
@@ -113,6 +129,56 @@ export default {
           ok: false,
           error: e.message
         }), { status: 500 });
+      }
+    }
+
+    /* =====================
+       GET RECORD (VERIFY)
+    ====================== */
+    if (url.pathname === "/getRecord") {
+
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405 });
+      }
+
+      try {
+        const body = await request.json();
+        const { documentHash } = body;
+
+        if (!isBytes32(documentHash)) {
+          return new Response(JSON.stringify({
+            ok: false,
+            error: "documentHash inválido"
+          }), { status: 400 });
+        }
+
+        const provider = new ethers.JsonRpcProvider(env.RPC_URL.trim());
+
+        const contract = new ethers.Contract(
+          env.CONTRACT_ADDRESS.trim(),
+          CONTRACT_ABI,
+          provider
+        );
+
+        const record = await contract.getRecord(documentHash);
+
+        return new Response(JSON.stringify({
+          ok: true,
+          owner: record.owner,
+          timestamp: Number(record.timestamp),
+          blockNumber: Number(record.blockNumber),
+          entity: record.entity,
+          docType: Number(record.docType),
+          state: Number(record.state)
+        }), {
+          headers: { "Content-Type": "application/json" }
+        });
+
+      } catch (e) {
+        return new Response(JSON.stringify({
+          ok: false,
+          error: "Hash no encontrado"
+        }), { status: 404 });
       }
     }
 
