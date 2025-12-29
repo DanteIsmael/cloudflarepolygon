@@ -8,6 +8,17 @@ const CONTRACT_ABI = [
     "inputs": [
       { "internalType": "bytes32", "name": "documentHash", "type": "bytes32" }
     ],
+    "name": "exists",
+    "outputs": [
+      { "internalType": "bool", "name": "", "type": "bool" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "documentHash", "type": "bytes32" }
+    ],
     "name": "getRecord",
     "outputs": [
       { "internalType": "address", "name": "owner", "type": "address" },
@@ -50,44 +61,33 @@ export default {
     const url = new URL(request.url);
 
     /* =====================
-       HEALTH CHECK
+       HEALTH
     ====================== */
     if (url.pathname === "/health") {
-      return new Response(JSON.stringify({
+      return Response.json({
         status: "ok",
         network: "polygon",
         rpc: env.RPC_URL ? "set" : "missing",
         contract: env.CONTRACT_ADDRESS || "missing"
-      }), {
-        headers: { "Content-Type": "application/json" }
       });
     }
 
     /* =====================
-       STAMP ON-CHAIN
+       STAMP
     ====================== */
     if (url.pathname === "/stamp") {
-
       if (request.method !== "POST") {
         return new Response("Method Not Allowed", { status: 405 });
       }
 
       try {
-        const body = await request.json();
-        const { documentHash, entity, docType, state } = body;
+        const { documentHash, entity, docType, state } = await request.json();
 
         if (!isBytes32(documentHash)) {
-          return new Response(JSON.stringify({
-            ok: false,
-            error: "documentHash debe ser bytes32 (0x + 64 hex)"
-          }), { status: 400 });
+          return Response.json({ ok: false, error: "documentHash inválido" }, { status: 400 });
         }
-
         if (!isBytes32(entity)) {
-          return new Response(JSON.stringify({
-            ok: false,
-            error: "entity debe ser bytes32 (0x + 64 hex)"
-          }), { status: 400 });
+          return Response.json({ ok: false, error: "entity inválido" }, { status: 400 });
         }
 
         const provider = new ethers.JsonRpcProvider(env.RPC_URL.trim());
@@ -116,75 +116,95 @@ export default {
           { gasLimit }
         );
 
-        return new Response(JSON.stringify({
+        return Response.json({
           ok: true,
           hash: tx.hash,
           gasLimit: gasLimit.toString()
-        }), {
-          headers: { "Content-Type": "application/json" }
         });
 
       } catch (e) {
-        return new Response(JSON.stringify({
-          ok: false,
-          error: e.message
-        }), { status: 500 });
+        return Response.json({ ok: false, error: e.message }, { status: 500 });
       }
     }
 
     /* =====================
-       GET RECORD (VERIFY)
+       VERIFY (EXISTS)
     ====================== */
-    if (url.pathname === "/getRecord") {
-
+    if (url.pathname === "/verify") {
       if (request.method !== "POST") {
         return new Response("Method Not Allowed", { status: 405 });
       }
 
       try {
-        const body = await request.json();
-        const { documentHash } = body;
+        const { documentHash } = await request.json();
 
         if (!isBytes32(documentHash)) {
-          return new Response(JSON.stringify({
-            ok: false,
-            error: "documentHash inválido"
-          }), { status: 400 });
+          return Response.json({ ok: false, error: "documentHash inválido" }, { status: 400 });
         }
 
         const provider = new ethers.JsonRpcProvider(env.RPC_URL.trim());
-
         const contract = new ethers.Contract(
           env.CONTRACT_ADDRESS.trim(),
           CONTRACT_ABI,
           provider
         );
 
-        const record = await contract.getRecord(documentHash);
+        const exists = await contract.exists(documentHash);
 
-        return new Response(JSON.stringify({
+        return Response.json({
           ok: true,
-          owner: record.owner,
-          timestamp: Number(record.timestamp),
-          blockNumber: Number(record.blockNumber),
-          entity: record.entity,
-          docType: Number(record.docType),
-          state: Number(record.state)
-        }), {
-          headers: { "Content-Type": "application/json" }
+          exists
         });
 
       } catch (e) {
-        return new Response(JSON.stringify({
-          ok: false,
-          error: "Hash no encontrado"
-        }), { status: 404 });
+        return Response.json({ ok: false, error: e.message }, { status: 500 });
       }
     }
 
     /* =====================
-       DEFAULT
+       GET RECORD (SAFE)
     ====================== */
+    if (url.pathname === "/getRecord") {
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405 });
+      }
+
+      try {
+        const { documentHash } = await request.json();
+
+        if (!isBytes32(documentHash)) {
+          return Response.json({ ok: false, error: "documentHash inválido" }, { status: 400 });
+        }
+
+        const provider = new ethers.JsonRpcProvider(env.RPC_URL.trim());
+        const contract = new ethers.Contract(
+          env.CONTRACT_ADDRESS.trim(),
+          CONTRACT_ABI,
+          provider
+        );
+
+        const exists = await contract.exists(documentHash);
+        if (!exists) {
+          return Response.json({ ok: false, error: "Hash no encontrado" }, { status: 404 });
+        }
+
+        const r = await contract.getRecord(documentHash);
+
+        return Response.json({
+          ok: true,
+          owner: r.owner,
+          timestamp: Number(r.timestamp),
+          blockNumber: Number(r.blockNumber),
+          entity: r.entity,
+          docType: Number(r.docType),
+          state: Number(r.state)
+        });
+
+      } catch (e) {
+        return Response.json({ ok: false, error: e.message }, { status: 500 });
+      }
+    }
+
     return new Response("Not Found", { status: 404 });
   }
 };
