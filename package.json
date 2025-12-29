@@ -1,0 +1,8 @@
+{
+  "name": "polygon-stamp-worker",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "ethers": "^6.8.0"
+  }
+}
