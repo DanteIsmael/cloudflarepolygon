@@ -20,69 +20,80 @@ export default {
 
     const url = new URL(request.url);
 
-    if (url.pathname !== "/stamp") {
-      return new Response("Not Found", { status: 404 });
-    }
-
-    if (request.method !== "POST") {
-      return new Response("Method Not Allowed", { status: 405 });
-    }
-
-    try {
-      const body = await request.json();
-
-      const {
-        documentHash,
-        entity,
-        docType,
-        state
-      } = body;
-
-      // Validaciones mínimas
-      if (!documentHash || !entity) {
-        return new Response(
-          JSON.stringify({ error: "documentHash y entity son requeridos" }),
-          { status: 400 }
-        );
-      }
-
-      const provider = new ethers.JsonRpcProvider(
-        env.ALCHEMY_POLYGON_RPC
-      );
-
-      const wallet = new ethers.Wallet(
-        env.PRIVATE_KEY,
-        provider
-      );
-
-      const contract = new ethers.Contract(
-        env.CONTRACT_ADDRESS,
-        CONTRACT_ABI,
-        wallet
-      );
-
-      const tx = await contract.stamp(
-        documentHash,
-        entity,
-        Number(docType),
-        Number(state),
-        {
-          gasLimit: 120_000
-        }
-      );
-
+    /* =====================
+       HEALTH CHECK
+    ====================== */
+    if (url.pathname === "/health") {
       return new Response(JSON.stringify({
-        ok: true,
-        hash: tx.hash
+        status: "ok",
+        network: "polygon",
+        contract: env.CONTRACT_ADDRESS
       }), {
         headers: { "Content-Type": "application/json" }
       });
-
-    } catch (e) {
-      return new Response(JSON.stringify({
-        ok: false,
-        error: e.message
-      }), { status: 500 });
     }
+
+    /* =====================
+       STAMP ON-CHAIN
+    ====================== */
+    if (url.pathname === "/stamp") {
+
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405 });
+      }
+
+      try {
+        const body = await request.json();
+        const { documentHash, entity, docType, state } = body;
+
+        if (!documentHash || !entity) {
+          return new Response(
+            JSON.stringify({ error: "documentHash y entity son requeridos" }),
+            { status: 400 }
+          );
+        }
+
+        const provider = new ethers.JsonRpcProvider(
+          env.ALCHEMY_POLYGON_RPC
+        );
+
+        const wallet = new ethers.Wallet(
+          env.PRIVATE_KEY,
+          provider
+        );
+
+        const contract = new ethers.Contract(
+          env.CONTRACT_ADDRESS,
+          CONTRACT_ABI,
+          wallet
+        );
+
+        const tx = await contract.stamp(
+          documentHash,
+          entity,
+          Number(docType),
+          Number(state),
+          { gasLimit: 120_000 }
+        );
+
+        return new Response(JSON.stringify({
+          ok: true,
+          hash: tx.hash
+        }), {
+          headers: { "Content-Type": "application/json" }
+        });
+
+      } catch (e) {
+        return new Response(JSON.stringify({
+          ok: false,
+          error: e.message
+        }), { status: 500 });
+      }
+    }
+
+    /* =====================
+       DEFAULT
+    ====================== */
+    return new Response("Not Found", { status: 404 });
   }
 };
