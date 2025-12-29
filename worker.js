@@ -1,40 +1,88 @@
+import { ethers } from "ethers";
+
+const CONTRACT_ABI = [
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "documentHash", "type": "bytes32" },
+      { "internalType": "bytes32", "name": "entity", "type": "bytes32" },
+      { "internalType": "uint16", "name": "docType", "type": "uint16" },
+      { "internalType": "uint16", "name": "state", "type": "uint16" }
+    ],
+    "name": "stamp",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+];
+
 export default {
   async fetch(request, env) {
+
     const url = new URL(request.url);
 
-    // 🔍 Health check
-    if (request.method === "GET" && url.pathname === "/health") {
-      try {
-        const rpcRes = await fetch(env.RPC_URL, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "eth_blockNumber",
-            params: []
-          })
-        });
-
-        const data = await rpcRes.json();
-
-        return new Response(
-          JSON.stringify({
-            status: "ok",
-            network: "polygon",
-            block: parseInt(data.result, 16)
-          }),
-          { headers: { "content-type": "application/json" } }
-        );
-      } catch (e) {
-        return new Response(
-          JSON.stringify({ status: "error", message: e.message }),
-          { status: 500 }
-        );
-      }
+    if (url.pathname !== "/stamp") {
+      return new Response("Not Found", { status: 404 });
     }
 
-    // ❌ Bloqueo cualquier otra cosa
-    return new Response("Not allowed", { status: 405 });
+    if (request.method !== "POST") {
+      return new Response("Method Not Allowed", { status: 405 });
+    }
+
+    try {
+      const body = await request.json();
+
+      const {
+        documentHash,
+        entity,
+        docType,
+        state
+      } = body;
+
+      // Validaciones mínimas
+      if (!documentHash || !entity) {
+        return new Response(
+          JSON.stringify({ error: "documentHash y entity son requeridos" }),
+          { status: 400 }
+        );
+      }
+
+      const provider = new ethers.JsonRpcProvider(
+        env.ALCHEMY_POLYGON_RPC
+      );
+
+      const wallet = new ethers.Wallet(
+        env.PRIVATE_KEY,
+        provider
+      );
+
+      const contract = new ethers.Contract(
+        env.CONTRACT_ADDRESS,
+        CONTRACT_ABI,
+        wallet
+      );
+
+      const tx = await contract.stamp(
+        documentHash,
+        entity,
+        Number(docType),
+        Number(state),
+        {
+          gasLimit: 120_000
+        }
+      );
+
+      return new Response(JSON.stringify({
+        ok: true,
+        hash: tx.hash
+      }), {
+        headers: { "Content-Type": "application/json" }
+      });
+
+    } catch (e) {
+      return new Response(JSON.stringify({
+        ok: false,
+        error: e.message
+      }), { status: 500 });
+    }
   }
 };
