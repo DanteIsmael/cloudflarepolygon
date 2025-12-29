@@ -23,15 +23,16 @@ export default {
     /* =====================
        HEALTH CHECK
     ====================== */
-    if (url.pathname === "/health") {
-      return new Response(JSON.stringify({
-        status: "ok",
-        network: "polygon",
-        contract: env.CONTRACT_ADDRESS
-      }), {
-        headers: { "Content-Type": "application/json" }
-      });
-    }
+if (url.pathname === "/health") {
+  return new Response(JSON.stringify({
+    status: "ok",
+    network: "polygon",
+    rpc: env.RPC_URL ? "set" : "missing",
+    contract: env.CONTRACT_ADDRESS
+  }), {
+    headers: { "Content-Type": "application/json" }
+  });
+}
 
     /* =====================
        STAMP ON-CHAIN
@@ -97,4 +98,5 @@ export default {
     return new Response("Not Found", { status: 404 });
   }
 };
+
 
