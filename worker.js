@@ -54,7 +54,7 @@ export default {
         }
 
         const provider = new ethers.JsonRpcProvider(
-          env.ALCHEMY_POLYGON_RPC
+          env.RPC_URL.trim()
         );
 
         const wallet = new ethers.Wallet(
@@ -97,3 +97,4 @@ export default {
     return new Response("Not Found", { status: 404 });
   }
 };
+
